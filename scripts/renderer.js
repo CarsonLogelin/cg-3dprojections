@@ -8,6 +8,7 @@ const TOP =    4;  // binary 000100
 const FAR =    2;  // binary 000010
 const NEAR =   1;  // binary 000001
 const FLOAT_EPSILON = 0.000001;
+const MOVE_STEP = 1.0;
 
 class Renderer {
     // canvas:              object ({id: __, width: __, height: __})
@@ -40,22 +41,42 @@ class Renderer {
     
     //
     moveLeft() {
-
+        this.slideCamera(this.viewAxes().u, -MOVE_STEP);
     }
-    
+
     //
     moveRight() {
-
+        this.slideCamera(this.viewAxes().u, MOVE_STEP);
     }
-    
+
     //
     moveBackward() {
-
+        this.slideCamera(this.viewAxes().n, MOVE_STEP);
     }
-    
+
     //
     moveForward() {
+        this.slideCamera(this.viewAxes().n, -MOVE_STEP);
+    }
 
+    // u, v, n for the current view
+    viewAxes() {
+        let n = this.scene.view.prp.subtract(this.scene.view.srp);
+        n.normalize();
+        let u = this.scene.view.vup.cross(n);
+        u.normalize();
+        let v = n.cross(u);
+        return {u: u, v: v, n: n};
+    }
+
+    // move PRP and SRP together so the camera slides without turning
+    slideCamera(axis, amount) {
+        let step = CG.Vector3(axis.x * amount, axis.y * amount, axis.z * amount);
+        this.scene.view.prp = this.scene.view.prp.add(step);
+        this.scene.view.srp = this.scene.view.srp.add(step);
+        if (!this.enable_animation) {
+            this.draw();
+        }
     }
 
     //
