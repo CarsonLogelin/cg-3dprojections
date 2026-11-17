@@ -92,6 +92,34 @@ class Renderer {
         //     * project to 2D
         //     * translate/scale to viewport (i.e. window)
         //     * draw line
+        let view = this.scene.view;
+        let models = this.scene.models;
+        let viewport = CG.mat4x4Viewport(this.canvas.width, this.canvas.height);
+        let mPer = CG.mat4x4MPer();
+        let z_min = -view.clip[4]/view.clip[5];
+        console.log(z_min);
+
+
+        for(const model of models) {
+            let nPer = CG.mat4x4Perspective(view.prp, view.srp, view.vup, view.clip);
+            let updatedVertices = [];
+            for(const vertex of model.vertices) {
+                updatedVertices.push(Matrix.multiply([nPer, vertex]));
+            }
+            for(const edge of model.edges) {
+                for(let i = 1; i < edge.length; i++) {
+                    let line = {pt0: updatedVertices[edge[i - 1]], pt1: updatedVertices[edge[i]]};
+                    line = this.clipLinePerspective(line, z_min);
+                    if(line != null) {
+                        line.pt0 = Matrix.multiply([viewport, mPer, CG.Vector4(line.pt0.x, line.pt0.y, line.pt0.z, 1)]);
+                        line.pt1 = Matrix.multiply([viewport, mPer, CG.Vector4(line.pt1.x, line.pt1.y, line.pt1.z, 1)]);
+                        this.drawLine(line.pt0.x  / line.pt0.w, line.pt0.y / line.pt0.w, line.pt1.x / line.pt1.w, line.pt1.y / line.pt1.w);
+                    }
+                    
+                }
+            }
+        }
+        
     }
 
     // Get outcode for a vertex
@@ -125,15 +153,82 @@ class Renderer {
     // line:         object {pt0: Vector4, pt1: Vector4}
     // z_min:        float (near clipping plane in canonical view volume)
     clipLinePerspective(line, z_min) {
-        let result = null;
-        let p0 = Vector3(line.pt0.x, line.pt0.y, line.pt0.z); 
-        let p1 = Vector3(line.pt1.x, line.pt1.y, line.pt1.z);
+        let p0 = CG.Vector3(line.pt0.x, line.pt0.y, line.pt0.z); 
+        let p1 = CG.Vector3(line.pt1.x, line.pt1.y, line.pt1.z);
         let out0 = this.outcodePerspective(p0, z_min);
         let out1 = this.outcodePerspective(p1, z_min);
-        
+        let deltaX = p1.x - p0.x;
+        let deltaY = p1.y - p0.y;
+        let deltaZ = p1.z - p0.z;
+        let result = {pt0: p0, pt1: p1};
         // TODO: implement clipping here!
+        let t = null;
+        while(true) {
+            if(out0 & out1) {
+                return null;
+            }
+            if(out0 | out1 === 0) {
+                return result;
+            }
+            console.log("out0: "  + out0);
+            console.log("out1: " + out1);
+            if(out0) {
+                if(out0 & LEFT) {
+                    console.log("left");
+                    t = (-p0.x + p0.z)/(deltaX - deltaZ);
+                } else if(out0 & RIGHT) {
+                    console.log("right");
+                    t = (p0.x + p0.z)/(-deltaX - deltaZ);
+                } else if(out0 & TOP) {
+                    console.log("top");
+                    t = (p0.y + p0.z)/(-deltaY - deltaZ);
+                } else if(out0 & BOTTOM) {
+                    console.log("bottom");
+                    t = (-p0.y + p0.z)/(deltaY - deltaZ);
+                } else if(out0 & FAR) {
+                    console.log("far");
+                    t = (-p0.z - 1)/deltaZ;
+                } else {
+                    console.log("near");
+                    t = (p0.z - z_min)/-deltaZ;
+                }
+                if(t === null) {
+                    continue;
+                }
+                p0.x = p0.x + (t * deltaX);
+                p0.y = p0.y + (t * deltaY);
+                p0.z = p0.z + (t * deltaZ);
+                out0 = this.outcodePerspective(p0, z_min);
+            } else if(out1){
+                if(out1 & LEFT) {
+                    console.log("left");
+                    t = (-p1.x + p1.z)/(deltaX - deltaZ);
+                } else if(out1 & RIGHT) {
+                    console.log("right");
+                    t = (p1.x + p1.z)/(-deltaX - deltaZ);
+                } else if(out1 & TOP) {
+                    console.log("top");
+                    t = (p1.y + p1.z)/(-deltaY - deltaZ);
+                } else if(out1 & BOTTOM) {
+                    console.log("bottom");
+                    t = (-p1.y + p1.z)/(deltaY - deltaZ);
+                } else if(out1 & FAR) {
+                    console.log("far");
+                    t = (-p1.z - 1)/deltaZ;
+                } else {
+                    t = (p1.z - z_min)/-deltaZ;
+                }
+                if(t === null) { 
+                    continue;
+                }
+                p1.x = p1.x + (t * deltaX);
+                p1.y = p1.y + (t * deltaY);
+                p1.z = p1.z + (t * deltaZ);
+                out1 = this.outcodePerspective(p1, z_min);
+            }
+            result = {pt0: p0, pt1: p1};
+        }
         
-        return result;
     }
 
     //
