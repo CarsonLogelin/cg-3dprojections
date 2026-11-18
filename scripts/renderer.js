@@ -9,6 +9,7 @@ const FAR =    2;  // binary 000010
 const NEAR =   1;  // binary 000001
 const FLOAT_EPSILON = 0.000001;
 const MOVE_STEP = 1.0;
+const ROTATE_STEP = Math.PI / 36;
  
 class Renderer {
     // canvas:              object ({id: __, width: __, height: __})
@@ -31,12 +32,34 @@ class Renderer {
  
     //
     rotateLeft() {
-        
+        this.rotateSrp(ROTATE_STEP);
     }
-    
+
     //
     rotateRight() {
- 
+        this.rotateSrp(-ROTATE_STEP);
+    }
+
+    // swing the SRP around the v-axis, pivoting on the PRP
+    rotateSrp(theta) {
+        let axis = this.viewAxes().v;
+        let dir = this.scene.view.srp.subtract(this.scene.view.prp);
+
+        let cos = Math.cos(theta);
+        let sin = Math.sin(theta);
+        let cross = CG.Vector3(axis.y * dir.z - axis.z * dir.y,
+                               axis.z * dir.x - axis.x * dir.z,
+                               axis.x * dir.y - axis.y * dir.x);
+        let dot = axis.x * dir.x + axis.y * dir.y + axis.z * dir.z;
+
+        let turned = CG.Vector3(dir.x * cos + cross.x * sin + axis.x * dot * (1 - cos),
+                                dir.y * cos + cross.y * sin + axis.y * dot * (1 - cos),
+                                dir.z * cos + cross.z * sin + axis.z * dot * (1 - cos));
+
+        this.scene.view.srp = this.scene.view.prp.add(turned);
+        if (!this.enable_animation) {
+            this.draw();
+        }
     }
     
     //
