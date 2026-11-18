@@ -20,14 +20,55 @@ class Renderer {
         this.canvas.height = canvas.height;
         this.ctx = this.canvas.getContext('2d');
         this.scene = this.processScene(scene);
-        this.enable_animation = false;  // <-- disabled for easier debugging; enable for animation
+        this.enable_animation = true;
         this.start_time = null;
         this.prev_time = null;
     }
  
     //
     updateTransforms(time, delta_time) {
-        // TODO: update any transformations needed for animation
+        for (let i = 0; i < this.scene.models.length; i++) {
+            let model = this.scene.models[i];
+            if (!model.hasOwnProperty('animation')) {
+                continue;
+            }
+
+            let theta = 2 * Math.PI * model.animation.rps * (time / 1000);
+            let center = this.modelCenter(model);
+
+            let to_origin = new Matrix(4, 4);
+            let rotate = new Matrix(4, 4);
+            let back = new Matrix(4, 4);
+            CG.mat4x4Translate(to_origin, -center.x, -center.y, -center.z);
+            if (model.animation.axis === 'x') {
+                CG.mat4x4RotateX(rotate, theta);
+            }
+            else if (model.animation.axis === 'y') {
+                CG.mat4x4RotateY(rotate, theta);
+            }
+            else {
+                CG.mat4x4RotateZ(rotate, theta);
+            }
+            CG.mat4x4Translate(back, center.x, center.y, center.z);
+
+            model.matrix = Matrix.multiply([back, rotate, to_origin]);
+        }
+    }
+
+    // centre of a model - given for the built in shapes, averaged for generic ones
+    modelCenter(model) {
+        if (model.hasOwnProperty('center')) {
+            return CG.Vector3(model.center.x, model.center.y, model.center.z);
+        }
+        let x = 0, y = 0, z = 0;
+        for (let i = 0; i < model.vertices.length; i++) {
+            x += model.vertices[i].x;
+            y += model.vertices[i].y;
+            z += model.vertices[i].z;
+        }
+        return CG.Vector3(x / model.vertices.length,
+                          y / model.vertices.length,
+                          z / model.vertices.length);
     }
  
     //
@@ -127,7 +168,7 @@ class Renderer {
             let nPer = CG.mat4x4Perspective(view.prp, view.srp, view.vup, view.clip);
             let updatedVertices = [];
             for(const vertex of model.vertices) {
-                updatedVertices.push(Matrix.multiply([nPer, vertex]));
+                updatedVertices.push(Matrix.multiply([nPer, model.matrix, vertex]));
             }
             for(const edge of model.edges) {
                 for(let i = 0; i < edge.length - 1; i++) {
