@@ -1,6 +1,6 @@
 import * as CG from './transforms.js';
 import { Matrix, Vector } from "./matrix.js";
-
+ 
 const LEFT =   32; // binary 100000
 const RIGHT =  16; // binary 010000
 const BOTTOM = 8;  // binary 001000
@@ -9,7 +9,7 @@ const FAR =    2;  // binary 000010
 const NEAR =   1;  // binary 000001
 const FLOAT_EPSILON = 0.000001;
 const MOVE_STEP = 1.0;
-
+ 
 class Renderer {
     // canvas:              object ({id: __, width: __, height: __})
     // scene:               object (...see description on Canvas)
@@ -23,42 +23,42 @@ class Renderer {
         this.start_time = null;
         this.prev_time = null;
     }
-
+ 
     //
     updateTransforms(time, delta_time) {
         // TODO: update any transformations needed for animation
     }
-
+ 
     //
     rotateLeft() {
-
+ 
     }
     
     //
     rotateRight() {
-
+ 
     }
     
     //
     moveLeft() {
         this.slideCamera(this.viewAxes().u, -MOVE_STEP);
     }
-
+ 
     //
     moveRight() {
         this.slideCamera(this.viewAxes().u, MOVE_STEP);
     }
-
+ 
     //
     moveBackward() {
         this.slideCamera(this.viewAxes().n, MOVE_STEP);
     }
-
+ 
     //
     moveForward() {
         this.slideCamera(this.viewAxes().n, -MOVE_STEP);
     }
-
+ 
     // u, v, n for the current view
     viewAxes() {
         let n = this.scene.view.prp.subtract(this.scene.view.srp);
@@ -68,7 +68,7 @@ class Renderer {
         let v = n.cross(u);
         return {u: u, v: v, n: n};
     }
-
+ 
     // move PRP and SRP together so the camera slides without turning
     slideCamera(axis, amount) {
         let step = CG.Vector3(axis.x * amount, axis.y * amount, axis.z * amount);
@@ -78,11 +78,11 @@ class Renderer {
             this.draw();
         }
     }
-
+ 
     //
     draw() {
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-
+ 
         // TODO: implement drawing here!
         // For each model
         //   * For each vertex
@@ -98,8 +98,8 @@ class Renderer {
         let mPer = CG.mat4x4MPer();
         let z_min = -view.clip[4]/view.clip[5];
         console.log(z_min);
-
-
+ 
+ 
         for(const model of models) {
             let nPer = CG.mat4x4Perspective(view.prp, view.srp, view.vup, view.clip);
             let updatedVertices = [];
@@ -121,7 +121,7 @@ class Renderer {
         }
         
     }
-
+ 
     // Get outcode for a vertex
     // vertex:       Vector4 (transformed vertex in homogeneous coordinates)
     // z_min:        float (near clipping plane in canonical view volume)
@@ -147,7 +147,7 @@ class Renderer {
         }
         return outcode;
     }
-
+ 
     // Clip line - should either return a new line (with two endpoints inside view volume)
     //             or null (if line is completely outside view volume)
     // line:         object {pt0: Vector4, pt1: Vector4}
@@ -230,7 +230,7 @@ class Renderer {
         }
         
     }
-
+ 
     //
     animate(timestamp) {
         // Get time and delta time for animation
@@ -240,24 +240,24 @@ class Renderer {
         }
         let time = timestamp - this.start_time;
         let delta_time = timestamp - this.prev_time;
-
+ 
         // Update transforms for animation
         this.updateTransforms(time, delta_time);
-
+ 
         // Draw slide
         this.draw();
-
+ 
         // Invoke call for next frame in animation
         if (this.enable_animation) {
             window.requestAnimationFrame((ts) => {
                 this.animate(ts);
             });
         }
-
+ 
         // Update previous time to current one for next calculation of delta time
         this.prev_time = timestamp;
     }
-
+ 
     //
     updateScene(scene) {
         this.scene = this.processScene(scene);
@@ -265,7 +265,7 @@ class Renderer {
             this.draw();
         }
     }
-
+ 
     //
     processScene(scene) {
         let processed = {
@@ -277,7 +277,7 @@ class Renderer {
             },
             models: []
         };
-
+ 
         for (let i = 0; i < scene.models.length; i++) {
             let model = { type: scene.models[i].type };
             if (model.type === 'generic') {
@@ -303,15 +303,113 @@ class Renderer {
                         model[key] = JSON.parse(JSON.stringify(scene.models[i][key]));
                     }
                 }
+                // ===== NEW (shape drawing): build vertices/edges for cube, cone, cylinder, sphere =====
+                this.generateModel(model);
+                // ===== END NEW =====
             }
-
+ 
             model.matrix = new Matrix(4, 4);
             processed.models.push(model);
         }
-
+ 
         return processed;
     }
+ 
+    // =====================================================================
+    // ===== NEW (shape drawing): everything from here to END NEW is new =====
+    // =====================================================================
+    // build vertices and edges for cube, cone, cylinder, and sphere models
+    generateModel(model) {
+        let cx = model.center.x, cy = model.center.y, cz = model.center.z;
+        model.vertices = [];
+        model.edges = [];
+ 
+        if (model.type === 'cube') {
+            let hw = model.width / 2, hh = model.height / 2, hd = model.depth / 2;
+            // 0-3: front face (z + hd), 4-7: back face (z - hd)
+            for (const z of [cz + hd, cz - hd]) {
+                model.vertices.push(CG.Vector4(cx - hw, cy - hh, z, 1));
+                model.vertices.push(CG.Vector4(cx + hw, cy - hh, z, 1));
+                model.vertices.push(CG.Vector4(cx + hw, cy + hh, z, 1));
+                model.vertices.push(CG.Vector4(cx - hw, cy + hh, z, 1));
+            }
+            model.edges = [
+                [0, 1, 2, 3, 0],
+                [4, 5, 6, 7, 4],
+                [0, 4], [1, 5], [2, 6], [3, 7]
+            ];
+        }
+        else if (model.type === 'cone') {
+            // center is the middle of the base; apex is straight up
+            let base = [];
+            for (let i = 0; i < model.sides; i++) {
+                let a = 2 * Math.PI * i / model.sides;
+                model.vertices.push(CG.Vector4(cx + model.radius * Math.cos(a), cy,
+                                               cz + model.radius * Math.sin(a), 1));
+                base.push(i);
+            }
+            let apex = model.vertices.length;
+            model.vertices.push(CG.Vector4(cx, cy + model.height, cz, 1));
+            model.edges.push([...base, 0]);
+            for (let i = 0; i < model.sides; i++) {
+                model.edges.push([i, apex]);
+            }
+        }
+        else if (model.type === 'cylinder') {
+            // center is the middle of the cylinder
+            let bottomY = cy - model.height / 2, topY = cy + model.height / 2;
+            let bottom = [], top = [];
+            for (let i = 0; i < model.sides; i++) {
+                let a = 2 * Math.PI * i / model.sides;
+                let x = cx + model.radius * Math.cos(a);
+                let z = cz + model.radius * Math.sin(a);
+                model.vertices.push(CG.Vector4(x, bottomY, z, 1));
+                model.vertices.push(CG.Vector4(x, topY, z, 1));
+                bottom.push(2 * i);
+                top.push(2 * i + 1);
+            }
+            model.edges.push([...bottom, bottom[0]]);
+            model.edges.push([...top, top[0]]);
+            for (let i = 0; i < model.sides; i++) {
+                model.edges.push([bottom[i], top[i]]);
+            }
+        }
+        else if (model.type === 'sphere') {
+            let r = model.radius;
+            // poles
+            model.vertices.push(CG.Vector4(cx, cy + r, cz, 1));   // 0: north
+            model.vertices.push(CG.Vector4(cx, cy - r, cz, 1));   // 1: south
+ 
+            // rings between the poles: stacks - 1 latitude rings, slices points each
+            let rings = [];
+            for (let st = 1; st < model.stacks; st++) {
+                let phi = Math.PI * st / model.stacks;          // angle down from the north pole
+                let ring = [];
+                for (let sl = 0; sl < model.slices; sl++) {
+                    let theta = 2 * Math.PI * sl / model.slices;
+                    ring.push(model.vertices.length);
+                    model.vertices.push(CG.Vector4(cx + r * Math.sin(phi) * Math.cos(theta),
+                                                   cy + r * Math.cos(phi),
+                                                   cz + r * Math.sin(phi) * Math.sin(theta), 1));
+                }
+                rings.push(ring);
+                model.edges.push([...ring, ring[0]]);           // latitude line
+            }
+ 
+            // longitude lines: north pole -> each ring -> south pole
+            for (let sl = 0; sl < model.slices; sl++) {
+                let line = [0];
+                for (const ring of rings) {
+                    line.push(ring[sl]);
+                }
+                line.push(1);
+                model.edges.push(line);
+            }
+        }
+    }
     
+    // ===== END NEW =====
+ 
     // x0:           float (x coordinate of p0)
     // y0:           float (y coordinate of p0)
     // x1:           float (x coordinate of p1)
@@ -322,11 +420,12 @@ class Renderer {
         this.ctx.moveTo(x0, y0);
         this.ctx.lineTo(x1, y1);
         this.ctx.stroke();
-
+ 
         this.ctx.fillStyle = '#FF0000';
         this.ctx.fillRect(x0 - 2, y0 - 2, 4, 4);
         this.ctx.fillRect(x1 - 2, y1 - 2, 4, 4);
     }
 };
-
+ 
 export { Renderer };
+ 
